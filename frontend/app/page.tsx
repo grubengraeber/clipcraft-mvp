@@ -58,6 +58,17 @@ export default function Home() {
 
   const t = useMemo(() => copy[lang], [lang]);
 
+  function normalizeError(raw?: string) {
+    const msg = (raw || '').trim();
+    if (!msg) return t.backendError;
+    if (/fetch failed|network|failed to fetch/i.test(msg)) {
+      return lang === 'de'
+        ? 'Der Server war kurz nicht erreichbar. Bitte in 5–10 Sekunden erneut versuchen.'
+        : 'The server was briefly unreachable. Please retry in 5–10 seconds.';
+    }
+    return msg;
+  }
+
   useEffect(() => {
     if (!job?.job_id || job.status === 'done' || job.status === 'error') return;
 
@@ -67,12 +78,12 @@ export default function Home() {
         const text = await res.text();
         const parsed = text ? JSON.parse(text) : null;
         if (!res.ok) {
-          setJob((prev) => (prev ? { ...prev, status: 'error', error: parsed?.detail || parsed?.error || text || t.backendError } : prev));
+          setJob((prev) => (prev ? { ...prev, status: 'error', error: normalizeError(parsed?.detail || parsed?.error || text || t.backendError) } : prev));
           return;
         }
         setJob(parsed);
       } catch (e) {
-        setJob((prev) => (prev ? { ...prev, status: 'error', error: e instanceof Error ? e.message : t.backendError } : prev));
+        setJob((prev) => (prev ? { ...prev, status: 'error', error: normalizeError(e instanceof Error ? e.message : t.backendError) } : prev));
       }
     }, 2000);
 
@@ -97,14 +108,14 @@ export default function Home() {
 
       if (!res.ok) {
         const msg = parsed?.detail || parsed?.error || text || t.backendError;
-        setUiError(msg);
+        setUiError(normalizeError(msg));
         setLoading(false);
         return;
       }
 
       setJob({ job_id: parsed.job_id, status: 'queued' });
     } catch (e) {
-      setUiError(e instanceof Error ? e.message : t.backendError);
+      setUiError(normalizeError(e instanceof Error ? e.message : t.backendError));
     }
     setLoading(false);
   }
