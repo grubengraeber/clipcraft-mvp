@@ -13,25 +13,40 @@ type JobData = {
 
 const copy = {
   de: {
-    title: 'Auto-Thumbnail MVP',
-    subtitle: 'Video hochladen (max. 30s), Transkript + Titel + Thumbnails erhalten.',
+    title: 'ClipCraft',
+    subtitle: 'Lade ein kurzes Video hoch (max. 30s) und erhalte Transkript, Titel & Thumbnail-Vorschläge.',
     upload: 'Video auswählen',
-    start: 'Verarbeiten',
-    processing: 'Verarbeitung läuft ...',
+    start: 'Generieren',
+    processing: 'Verarbeitung läuft',
     transcript: 'Transkript',
-    generatedTitle: 'Generierter Titel',
-    thumbs: 'Thumbnails'
+    generatedTitle: 'Titelvorschlag',
+    thumbs: 'Thumbnails',
+    empty: 'Noch keine Ergebnisse. Lade ein Video hoch und starte die Generierung.',
+    status: 'Status',
+    pickFileFirst: 'Bitte zuerst ein Video auswählen.',
+    backendError: 'Serverfehler'
   },
   en: {
-    title: 'Auto Thumbnail MVP',
-    subtitle: 'Upload a video (max 30s) and get transcript + title + thumbnails.',
+    title: 'ClipCraft',
+    subtitle: 'Upload a short video (max. 30s) to get transcript, title and thumbnail suggestions.',
     upload: 'Choose video',
-    start: 'Process',
-    processing: 'Processing ...',
+    start: 'Generate',
+    processing: 'Processing',
     transcript: 'Transcript',
-    generatedTitle: 'Generated title',
-    thumbs: 'Thumbnails'
+    generatedTitle: 'Title suggestion',
+    thumbs: 'Thumbnails',
+    empty: 'No results yet. Upload a video and start generation.',
+    status: 'Status',
+    pickFileFirst: 'Please select a video first.',
+    backendError: 'Server error'
   }
+};
+
+const statusColor: Record<JobData['status'], string> = {
+  queued: '#f59e0b',
+  processing: '#60a5fa',
+  done: '#34d399',
+  error: '#f87171'
 };
 
 export default function Home() {
@@ -39,81 +54,125 @@ export default function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [job, setJob] = useState<JobData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [uiError, setUiError] = useState<string>('');
 
   const t = useMemo(() => copy[lang], [lang]);
 
   useEffect(() => {
-    if (!job?.job_id) return;
-    if (job.status === 'done' || job.status === 'error') return;
+    if (!job?.job_id || job.status === 'done' || job.status === 'error') return;
 
     const id = setInterval(async () => {
-      const res = await fetch(`/api/jobs/${job.job_id}`);
-      if (!res.ok) return;
-      const next = await res.json();
-      setJob(next);
+      try {
+        const res = await fetch(`/api/jobs/${job.job_id}`);
+        const text = await res.text();
+        const parsed = text ? JSON.parse(text) : null;
+        if (!res.ok) {
+          setJob((prev) => (prev ? { ...prev, status: 'error', error: parsed?.detail || parsed?.error || text || t.backendError } : prev));
+          return;
+        }
+        setJob(parsed);
+      } catch (e) {
+        setJob((prev) => (prev ? { ...prev, status: 'error', error: e instanceof Error ? e.message : t.backendError } : prev));
+      }
     }, 2000);
 
     return () => clearInterval(id);
-  }, [job]);
+  }, [job, t.backendError]);
 
   async function submit() {
-    if (!file) return;
-    setLoading(true);
-    const fd = new FormData();
-    fd.append('video', file);
-
-    const res = await fetch('/api/jobs', { method: 'POST', body: fd });
-    if (!res.ok) {
-      const msg = await res.text();
-      alert(msg);
-      setLoading(false);
+    setUiError('');
+    if (!file) {
+      setUiError(t.pickFileFirst);
       return;
     }
 
-    const created = await res.json();
-    setJob({ job_id: created.job_id, status: 'queued' });
+    setLoading(true);
+    try {
+      const fd = new FormData();
+      fd.append('video', file);
+
+      const res = await fetch('/api/jobs', { method: 'POST', body: fd });
+      const text = await res.text();
+      const parsed = text ? JSON.parse(text) : null;
+
+      if (!res.ok) {
+        const msg = parsed?.detail || parsed?.error || text || t.backendError;
+        setUiError(msg);
+        setLoading(false);
+        return;
+      }
+
+      setJob({ job_id: parsed.job_id, status: 'queued' });
+    } catch (e) {
+      setUiError(e instanceof Error ? e.message : t.backendError);
+    }
     setLoading(false);
   }
 
   return (
-    <main style={{ maxWidth: 980, margin: '0 auto', padding: 28 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
-        <h1>{t.title}</h1>
-        <select value={lang} onChange={(e) => setLang(e.target.value as 'de' | 'en')}>
-          <option value='de'>Deutsch</option>
-          <option value='en'>English</option>
-        </select>
-      </div>
-
-      <p>{t.subtitle}</p>
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-        <input type='file' accept='video/*' onChange={(e) => setFile(e.target.files?.[0] || null)} />
-        <button onClick={submit} disabled={!file || loading}>{loading ? '...' : t.start}</button>
-      </div>
-
-      {job && <p style={{ marginTop: 12 }}>{t.processing} [{job.status}]</p>}
-
-      {job?.status === 'done' && (
-        <section style={{ marginTop: 24 }}>
-          <h3>{t.generatedTitle}</h3>
-          <p>{job.title}</p>
-
-          <h3>{t.transcript}</h3>
-          <p style={{ whiteSpace: 'pre-wrap' }}>{job.transcript}</p>
-
-          <h3>{t.thumbs}</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-            {Object.entries(job.thumbnails || {}).map(([k, url]) => (
-              <div key={k}>
-                <strong>{k}</strong>
-                <img src={`${process.env.NEXT_PUBLIC_BACKEND_URL}${url}`} alt={k} style={{ width: '100%', borderRadius: 8 }} />
-              </div>
-            ))}
+    <main style={{ maxWidth: 980, margin: '0 auto', padding: 24 }}>
+      <div style={{
+        border: '1px solid #1f2937', borderRadius: 20, padding: 22,
+        background: 'linear-gradient(180deg, #111827 0%, #0b1220 100%)', boxShadow: '0 20px 40px rgba(0,0,0,.35)'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          <div>
+            <h1 style={{ margin: 0, fontSize: 38, lineHeight: 1.05 }}>{t.title}</h1>
+            <p style={{ color: '#cbd5e1', marginTop: 10, marginBottom: 0 }}>{t.subtitle}</p>
           </div>
-        </section>
-      )}
+          <select value={lang} onChange={(e) => setLang(e.target.value as 'de' | 'en')} style={{
+            background: '#0f172a', color: 'white', border: '1px solid #334155', borderRadius: 10, padding: '8px 10px'
+          }}>
+            <option value='de'>Deutsch</option>
+            <option value='en'>English</option>
+          </select>
+        </div>
 
-      {job?.status === 'error' && <p style={{ color: '#ff6b6b' }}>{job.error}</p>}
+        <div style={{ marginTop: 20, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <input type='file' accept='video/*' onChange={(e) => setFile(e.target.files?.[0] || null)} style={{
+            color: '#e2e8f0', background: '#0f172a', border: '1px solid #334155', borderRadius: 10, padding: 8
+          }} />
+          <button onClick={submit} disabled={!file || loading} style={{
+            border: 0, borderRadius: 10, padding: '10px 14px', cursor: 'pointer',
+            background: loading ? '#475569' : '#2563eb', color: 'white', fontWeight: 600
+          }}>{loading ? '...' : t.start}</button>
+        </div>
+
+        {uiError && <div style={{ marginTop: 14, background: '#7f1d1d', color: '#fee2e2', border: '1px solid #ef4444', borderRadius: 10, padding: 12 }}>{uiError}</div>}
+
+        {job && (
+          <div style={{ marginTop: 14, display: 'inline-flex', gap: 8, alignItems: 'center', border: '1px solid #334155', borderRadius: 999, padding: '6px 10px' }}>
+            <span style={{ width: 8, height: 8, borderRadius: 99, background: statusColor[job.status] }} />
+            <span style={{ color: '#cbd5e1' }}>{t.status}: {job.status === 'processing' ? t.processing : job.status}</span>
+          </div>
+        )}
+      </div>
+
+      <section style={{ marginTop: 20, border: '1px solid #1f2937', borderRadius: 16, padding: 18, background: '#0b1220' }}>
+        {!job && <p style={{ margin: 0, color: '#94a3b8' }}>{t.empty}</p>}
+
+        {job?.status === 'done' && (
+          <>
+            <h3 style={{ marginBottom: 8 }}>{t.generatedTitle}</h3>
+            <p style={{ marginTop: 0 }}>{job.title}</p>
+
+            <h3 style={{ marginBottom: 8 }}>{t.transcript}</h3>
+            <p style={{ whiteSpace: 'pre-wrap', color: '#cbd5e1' }}>{job.transcript}</p>
+
+            <h3 style={{ marginBottom: 8 }}>{t.thumbs}</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 12 }}>
+              {Object.entries(job.thumbnails || {}).map(([k, url]) => (
+                <div key={k} style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 12, padding: 10 }}>
+                  <strong style={{ color: '#e2e8f0' }}>{k}</strong>
+                  <img src={`${process.env.NEXT_PUBLIC_BACKEND_URL}${url}`} alt={k} style={{ width: '100%', borderRadius: 8, marginTop: 8 }} />
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {job?.status === 'error' && <div style={{ color: '#fca5a5', background: '#7f1d1d', border: '1px solid #ef4444', borderRadius: 10, padding: 12 }}>{job.error || t.backendError}</div>}
+      </section>
     </main>
   );
 }
