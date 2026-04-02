@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const backend = process.env.BACKEND_URL || 'http://localhost:8000';
+const backend = process.env.NEXT_PUBLIC_BACKEND_URL || process.env.BACKEND_URL || 'http://localhost:8000';
 const apiKey = process.env.BACKEND_API_KEY || '';
 
 export async function GET(_: NextRequest, { params }: { params: { jobId: string } }) {

@@ -61,7 +61,7 @@ export default function Home() {
   function normalizeError(raw?: string) {
     const msg = (raw || '').trim();
     if (!msg) return t.backendError;
-    if (/fetch failed|network|failed to fetch/i.test(msg)) {
+    if (/fetch failed|network|failed to fetch|backend currently unreachable/i.test(msg)) {
       return lang === 'de'
         ? 'Der Server war kurz nicht erreichbar. Bitte in 5–10 Sekunden erneut versuchen.'
         : 'The server was briefly unreachable. Please retry in 5–10 seconds.';
