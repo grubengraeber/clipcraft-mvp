@@ -14,6 +14,7 @@ import {
   Captions,
   Check,
   Clipboard,
+  CreditCard,
   Download,
   ExternalLink,
   FileVideo,
@@ -23,18 +24,23 @@ import {
   Languages,
   LayoutGrid,
   Loader2,
+  LogOut,
   Play,
   Plus,
   RefreshCw,
+  Receipt,
   Save,
   Search,
+  Settings,
   Sparkles,
   Trash2,
   Upload,
+  UserRound,
   Video,
   WandSparkles,
 } from "lucide-react";
 
+import type { ClipCraftPlan, StoredAccount } from "@/lib/account-store";
 import type {
   AnalyzeResponse,
   StoredProject,
@@ -43,6 +49,7 @@ import type {
 import {
   getMessages,
   localeHeader,
+  planPriceLabel,
   type Locale,
 } from "@/lib/i18n";
 
@@ -83,8 +90,10 @@ type VideoMetadata = {
 
 type Stage = "idle" | "scanning" | "ready" | "analyzing" | "complete";
 type VisualStyle = "bold" | "clean" | "editorial";
-type ActiveView = "studio" | "projects";
+export type ClipCraftStudioView = "studio" | "projects" | "settings";
+type ActiveView = ClipCraftStudioView;
 type StudioMessages = ReturnType<typeof getMessages>["studio"];
+type SettingsMessages = ReturnType<typeof getMessages>["settings"];
 
 const presets: Preset[] = [
   {
@@ -125,25 +134,47 @@ const accents = [
   { id: "rose", name: "Rose", value: "#ff6b9a" },
 ];
 
+const fallbackStudioPlan: ClipCraftPlan = {
+  id: "creator",
+  name: "Creator",
+  priceLabel: "19 EUR / Monat",
+  minutes: 120,
+  exports: 250,
+  stripePriceEnv: "STRIPE_PRICE_CREATOR",
+};
+
 const accentById = Object.fromEntries(
   accents.map((item) => [item.id, item.value]),
 );
 
-const styleLabels: Record<VisualStyle, string> = {
-  bold: "Bold",
-  clean: "Clean",
-  editorial: "Editorial",
-};
-
 export function ClipCraftStudio({
+  account,
+  initialView = "studio",
   locale,
+  onEditAccount,
   onLocaleChange,
+  onLogout,
+  onManageBilling,
+  onOpenBilling,
+  plans,
+  saving,
+  stripeConfigured,
 }: {
+  account: StoredAccount;
+  initialView?: ClipCraftStudioView;
   locale: Locale;
+  onEditAccount: () => void;
   onLocaleChange: (locale: Locale) => void;
+  onLogout: () => void;
+  onManageBilling: () => void;
+  onOpenBilling: () => void;
+  plans: ClipCraftPlan[];
+  saving: boolean;
+  stripeConfigured: boolean;
 }) {
   const copy = getMessages(locale);
   const studioCopy = copy.studio;
+  const settingsCopy = copy.settings;
   const inputRef = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const objectUrlRef = useRef<string | null>(null);
@@ -168,7 +199,7 @@ export function ClipCraftStudio({
   const [copied, setCopied] = useState(false);
   const [projects, setProjects] = useState<StoredProject[]>([]);
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<ActiveView>("studio");
+  const [activeView, setActiveView] = useState<ActiveView>(initialView);
   const [projectSearch, setProjectSearch] = useState("");
 
   const selectedPreset =
@@ -203,6 +234,13 @@ export function ClipCraftStudio({
       videos: projects.length,
     }),
     [projects],
+  );
+  const activePlan = useMemo<ClipCraftPlan>(
+    () =>
+      plans.find((plan) => plan.id === account.billing.planId) ??
+      plans[0] ??
+      fallbackStudioPlan,
+    [account.billing.planId, plans],
   );
 
   const canAnalyze = Boolean(file && selectedFrame && stage !== "analyzing");
@@ -754,6 +792,19 @@ export function ClipCraftStudio({
                   {projects.length}
                 </span>
               </button>
+              <button
+                className={[
+                  "inline-flex h-9 items-center gap-2 rounded px-3 text-sm font-semibold transition",
+                  activeView === "settings"
+                    ? "bg-white text-black"
+                    : "text-white/65 hover:text-white",
+                ].join(" ")}
+                onClick={() => setActiveView("settings")}
+                type="button"
+              >
+                <Settings className="size-4" />
+                {studioCopy.settingsTab}
+              </button>
             </nav>
             <StudioLanguageToggle
               copy={copy}
@@ -946,7 +997,7 @@ export function ClipCraftStudio({
                           </span>
                           <span>{formatBytes(project.videoBytes)}</span>
                           <span className="text-right">
-                            {formatDate(project.updatedAt)}
+                            {formatDate(project.updatedAt, locale)}
                           </span>
                         </div>
 
@@ -1006,6 +1057,21 @@ export function ClipCraftStudio({
               </div>
             )}
           </section>
+        ) : activeView === "settings" ? (
+          <SettingsView
+            account={account}
+            activePlan={activePlan}
+            copy={copy}
+            locale={locale}
+            onEditAccount={onEditAccount}
+            onLocaleChange={onLocaleChange}
+            onLogout={onLogout}
+            onManageBilling={onManageBilling}
+            onOpenBilling={onOpenBilling}
+            saving={saving}
+            settingsCopy={settingsCopy}
+            stripeConfigured={stripeConfigured}
+          />
         ) : (
         <div className="grid flex-1 gap-4 xl:grid-cols-[360px_minmax(0,1fr)_400px]">
           <section className="rounded-lg border border-white/10 bg-[#171814] p-4">
@@ -1381,7 +1447,7 @@ export function ClipCraftStudio({
               </div>
 
               <div className="flex rounded-md border border-black/15 bg-white p-1">
-                {Object.entries(styleLabels).map(([value, label]) => (
+                {(["bold", "clean", "editorial"] as const).map((value) => (
                   <button
                     className={[
                       "h-8 rounded px-3 text-sm font-semibold transition",
@@ -1390,10 +1456,10 @@ export function ClipCraftStudio({
                         : "text-black/55 hover:text-black",
                     ].join(" ")}
                     key={value}
-                    onClick={() => setVisualStyle(value as VisualStyle)}
+                    onClick={() => setVisualStyle(value)}
                     type="button"
                   >
-                    {label}
+                    {studioCopy.styleLabels[value]}
                   </button>
                 ))}
               </div>
@@ -1510,6 +1576,261 @@ export function ClipCraftStudio({
         )}
       </div>
     </main>
+  );
+}
+
+function SettingsView({
+  account,
+  activePlan,
+  copy,
+  locale,
+  onEditAccount,
+  onLocaleChange,
+  onLogout,
+  onManageBilling,
+  onOpenBilling,
+  saving,
+  settingsCopy,
+  stripeConfigured,
+}: {
+  account: StoredAccount;
+  activePlan: ClipCraftPlan;
+  copy: ReturnType<typeof getMessages>;
+  locale: Locale;
+  onEditAccount: () => void;
+  onLocaleChange: (locale: Locale) => void;
+  onLogout: () => void;
+  onManageBilling: () => void;
+  onOpenBilling: () => void;
+  saving: boolean;
+  settingsCopy: SettingsMessages;
+  stripeConfigured: boolean;
+}) {
+  const minuteUsage = Math.min(
+    100,
+    Math.round((account.usage.monthlyMinutesUsed / activePlan.minutes) * 100),
+  );
+  const exportUsage = Math.min(
+    100,
+    Math.round((account.usage.monthlyExports / activePlan.exports) * 100),
+  );
+  const billingStatus = settingsCopy.billingStatuses[account.billing.status];
+  const provider = account.billing.provider
+    ? settingsCopy.billingProviders[account.billing.provider]
+    : settingsCopy.billingProviders.none;
+
+  return (
+    <section className="rounded-lg border border-white/10 bg-[#171814] p-4">
+      <div className="flex flex-col gap-4 border-b border-white/10 pb-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="font-mono text-xs uppercase tracking-[0.22em] text-[#35d7ff]">
+            {settingsCopy.eyebrow}
+          </p>
+          <h2 className="mt-1 text-2xl font-semibold text-white">
+            {settingsCopy.title}
+          </h2>
+          <p className="mt-2 text-sm text-white/50">{settingsCopy.subtitle}</p>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="inline-flex h-10 items-center gap-2 rounded-md border border-white/10 px-3 text-sm font-semibold text-white/75 transition hover:border-white/30 hover:text-white"
+            onClick={onEditAccount}
+            type="button"
+          >
+            <UserRound className="size-4" />
+            {settingsCopy.editAccount}
+          </button>
+          <button
+            className="inline-flex h-10 items-center gap-2 rounded-md bg-[#b7ff4a] px-3 text-sm font-bold text-black transition hover:bg-[#d4ff8a] disabled:opacity-50"
+            disabled={saving}
+            onClick={onOpenBilling}
+            type="button"
+          >
+            <CreditCard className="size-4" />
+            {settingsCopy.changePlan}
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <article className="rounded-lg border border-white/10 bg-white/[0.04] p-4">
+          <div className="mb-4 flex items-center gap-2">
+            <UserRound className="size-5 text-[#b7ff4a]" />
+            <h3 className="text-lg font-semibold text-white">
+              {settingsCopy.account}
+            </h3>
+          </div>
+          <dl className="grid gap-3 text-sm">
+            <SettingsRow label={settingsCopy.workspace} value={account.workspaceName} />
+            <SettingsRow label={settingsCopy.name} value={account.name} />
+            <SettingsRow label={settingsCopy.email} value={account.email} />
+            <SettingsRow label={settingsCopy.role} value={account.role} />
+            <SettingsRow
+              label={settingsCopy.createdAt}
+              value={formatDate(account.createdAt, locale)}
+            />
+          </dl>
+        </article>
+
+        <article className="rounded-lg border border-white/10 bg-white/[0.04] p-4">
+          <div className="mb-4 flex items-center gap-2">
+            <CreditCard className="size-5 text-[#35d7ff]" />
+            <h3 className="text-lg font-semibold text-white">
+              {settingsCopy.billing}
+            </h3>
+          </div>
+          <dl className="grid gap-3 text-sm">
+            <SettingsRow
+              label={settingsCopy.plan}
+              value={`${activePlan.name} · ${planPriceLabel(activePlan.priceLabel, locale)}`}
+            />
+            <SettingsRow label={settingsCopy.status} value={billingStatus} />
+            <SettingsRow label={settingsCopy.provider} value={provider} />
+            <SettingsRow
+              label={settingsCopy.currentPeriodEnd}
+              value={
+                account.billing.currentPeriodEnd
+                  ? formatDate(account.billing.currentPeriodEnd, locale)
+                  : settingsCopy.notAvailable
+              }
+            />
+            <SettingsRow
+              label={settingsCopy.stripeMode}
+              value={
+                stripeConfigured ? settingsCopy.stripeLive : settingsCopy.stripeTest
+              }
+            />
+          </dl>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <button
+              className="inline-flex h-10 items-center gap-2 rounded-md bg-white px-3 text-sm font-semibold text-black transition hover:bg-white/90 disabled:opacity-50"
+              disabled={saving}
+              onClick={onManageBilling}
+              type="button"
+            >
+              {saving ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Receipt className="size-4" />
+              )}
+              {settingsCopy.billingPortal}
+            </button>
+            <button
+              className="inline-flex h-10 items-center gap-2 rounded-md border border-white/10 px-3 text-sm font-semibold text-white/75 transition hover:border-white/30 hover:text-white"
+              disabled={saving}
+              onClick={onOpenBilling}
+              type="button"
+            >
+              <CreditCard className="size-4" />
+              {settingsCopy.paymentSection}
+            </button>
+          </div>
+        </article>
+
+        <article className="rounded-lg border border-white/10 bg-white/[0.04] p-4">
+          <div className="mb-4 flex items-center gap-2">
+            <LayoutGrid className="size-5 text-[#ffd166]" />
+            <h3 className="text-lg font-semibold text-white">
+              {settingsCopy.usage}
+            </h3>
+          </div>
+          <div className="grid gap-4">
+            <UsageLine
+              label={settingsCopy.minutesUsed}
+              value={`${Math.round(account.usage.monthlyMinutesUsed)} / ${activePlan.minutes} min`}
+              percent={minuteUsage}
+            />
+            <UsageLine
+              label={settingsCopy.exportsUsed}
+              value={`${account.usage.monthlyExports} / ${activePlan.exports} PNG`}
+              percent={exportUsage}
+            />
+          </div>
+        </article>
+
+        <article className="rounded-lg border border-white/10 bg-white/[0.04] p-4">
+          <div className="mb-4 flex items-center gap-2">
+            <Settings className="size-5 text-[#ff6b9a]" />
+            <h3 className="text-lg font-semibold text-white">
+              {settingsCopy.preferences}
+            </h3>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-white/10 bg-black/20 p-3">
+            <span className="text-sm font-semibold text-white/75">
+              {settingsCopy.language}
+            </span>
+            <StudioLanguageToggle
+              copy={copy}
+              locale={locale}
+              onLocaleChange={onLocaleChange}
+            />
+          </div>
+          <div className="mt-3 rounded-md border border-white/10 bg-black/20 p-3 text-sm text-white/60">
+            <p className="font-semibold text-white/75">
+              {settingsCopy.standalone}
+            </p>
+            <p className="mt-2">{settingsCopy.localStorage}</p>
+          </div>
+        </article>
+      </div>
+
+      <div className="mt-4 rounded-lg border border-white/10 bg-black/20 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-white">
+              {settingsCopy.session}
+            </h3>
+            <p className="mt-1 text-sm text-white/45">{settingsCopy.sessionBody}</p>
+          </div>
+          <button
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-[#ff4d2e]/30 px-3 text-sm font-semibold text-[#ff9b8a] transition hover:border-[#ff4d2e]/60 disabled:opacity-50"
+            disabled={saving}
+            onClick={onLogout}
+            type="button"
+          >
+            <LogOut className="size-4" />
+            {settingsCopy.logout}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SettingsRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid gap-1 rounded-md border border-white/10 bg-black/20 px-3 py-2 sm:grid-cols-[160px_minmax(0,1fr)] sm:items-center">
+      <dt className="font-mono text-xs uppercase tracking-[0.12em] text-white/35">
+        {label}
+      </dt>
+      <dd className="min-w-0 truncate text-white/80">{value}</dd>
+    </div>
+  );
+}
+
+function UsageLine({
+  label,
+  percent,
+  value,
+}: {
+  label: string;
+  percent: number;
+  value: string;
+}) {
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between gap-3 text-sm">
+        <span className="font-semibold text-white/75">{label}</span>
+        <span className="font-mono text-white/45">{value}</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-white/10">
+        <div
+          className="h-full rounded-full bg-[#b7ff4a]"
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -2255,8 +2576,8 @@ function formatBytes(bytes: number) {
   return `${(bytes / 1024 ** index).toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
 }
 
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("de-AT", {
+function formatDate(value: string, locale: Locale = "de") {
+  return new Intl.DateTimeFormat(locale === "en" ? "en-US" : "de-AT", {
     day: "2-digit",
     month: "2-digit",
     year: "2-digit",

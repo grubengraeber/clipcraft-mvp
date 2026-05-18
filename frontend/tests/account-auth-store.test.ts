@@ -37,9 +37,11 @@ describe("account-store", () => {
     const initial = await accountStore.ensureAccountForEmail({
       email: "MIRA@EXAMPLE.COM",
       name: "Mira",
+      workspaceName: "Mira Lab",
     });
 
     expect(initial.email).toBe("mira@example.com");
+    expect(initial.workspaceName).toBe("Mira Lab");
     expect(initial.onboardingCompletedAt).toBeNull();
     expect(accountStore.accountHasAccess(initial)).toBe(false);
 
@@ -87,11 +89,13 @@ describe("account-store", () => {
     const updated = await accountStore.ensureAccountForEmail({
       email: "SECOND@EXAMPLE.COM",
       name: "Second User",
+      workspaceName: "Second Workspace",
     });
 
     expect(updated.id).toBe(created.id);
     expect(updated.email).toBe("second@example.com");
     expect(updated.name).toBe("Second User");
+    expect(updated.workspaceName).toBe("Second Workspace");
 
     await rm(dataDir, { recursive: true, force: true });
     const anonymous = await accountStore.activateLocalPlan("creator");

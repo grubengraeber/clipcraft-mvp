@@ -61,7 +61,7 @@ async function main() {
     saved.push(filePath);
   }
 
-  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.goto(`${baseUrl}/login`, { waitUntil: "networkidle" });
   await page.getByRole("heading", { name: "Anmelden ohne Passwort" }).waitFor();
   await capture("00-login-otp");
   await page.getByRole("button", { name: "EN", exact: true }).click();
@@ -73,14 +73,23 @@ async function main() {
   await capture("00b-login-otp-mobile");
   await page.setViewportSize({ width: 1440, height: 1000 });
 
+  await page.goto(`${baseUrl}/register`, { waitUntil: "networkidle" });
+  await page.getByRole("heading", { name: "Account und Workspace erstellen" }).waitFor();
+  await capture("00d-register");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await capture("00e-register-mobile");
+  await page.setViewportSize({ width: 1440, height: 1000 });
+
+  await page.getByLabel("Name").fill("Mira Schaefer");
+  await page.getByLabel("Workspace").fill("Mira Studio");
   await page.getByLabel("E-Mail").fill("mira@example.com");
-  await page.getByRole("button", { name: /Login-Code senden/ }).click();
+  await page.getByRole("button", { name: /Registrierungs-Code senden/ }).click();
   const otp = (await page.getByTestId("dev-otp-code").textContent())?.trim();
   if (!otp) {
     throw new Error("Lokaler OTP-Code wurde nicht angezeigt.");
   }
   await page.getByLabel("6-stelliger Code").fill(otp);
-  await page.getByRole("button", { name: /^Anmelden$/ }).click();
+  await page.getByRole("button", { name: /^Account erstellen$/ }).click();
   await page.getByRole("heading", { name: "Workspace anlegen" }).waitFor();
   await capture("01-onboarding-profile");
   await page.setViewportSize({ width: 390, height: 844 });
@@ -111,6 +120,16 @@ async function main() {
   await page.getByRole("button", { name: /Projekte/ }).click();
   await page.getByRole("heading", { name: "Alle Videos und Thumbnails" }).waitFor();
   await capture("05-project-archive");
+
+  await page.getByRole("button", { name: /Einstellungen/ }).click();
+  await page.getByRole("heading", { name: "Account, Payment und Sprache" }).waitFor();
+  await capture("06-settings");
+
+  await page.goto(`${baseUrl}/settings`, { waitUntil: "networkidle" });
+  await page.getByRole("heading", { name: "Account, Payment und Sprache" }).waitFor();
+  await capture("06b-settings-route");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await capture("06c-settings-mobile");
 
   console.log(
     JSON.stringify(

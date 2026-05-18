@@ -126,17 +126,20 @@ export async function readAccount(): Promise<StoredAccount | null> {
 export async function ensureAccountForEmail(input: {
   email: string;
   name?: string;
+  workspaceName?: string;
 }) {
   const current = await readAccount();
   const now = new Date().toISOString();
   const email = cleanEmail(input.email);
   const name = cleanText(input.name ?? "");
+  const workspaceName = cleanText(input.workspaceName ?? "");
 
   if (current) {
     const updated: StoredAccount = {
       ...current,
       email: email || current.email,
       name: name || current.name,
+      workspaceName: workspaceName || current.workspaceName,
       updatedAt: now,
     };
     await writeAccount(updated);
@@ -147,7 +150,7 @@ export async function ensureAccountForEmail(input: {
     id: randomUUID(),
     name: name || "ClipCraft User",
     email,
-    workspaceName: name ? `${name} Studio` : "ClipCraft Studio",
+    workspaceName: workspaceName || (name ? `${name} Studio` : "ClipCraft Studio"),
     role: "creator",
     primaryGoal: "thumbnails",
     brandAccent: "#ff4d2e",

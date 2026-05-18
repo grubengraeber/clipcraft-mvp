@@ -11,7 +11,6 @@ import {
   Languages,
   Loader2,
   LockKeyhole,
-  LogOut,
   Mail,
   Palette,
   Receipt,
@@ -20,6 +19,7 @@ import {
 } from "lucide-react";
 
 import { ClipCraftStudio } from "@/components/clipcraft-studio";
+import type { ClipCraftStudioView } from "@/components/clipcraft-studio";
 import type {
   ClipCraftPlan,
   PlanId,
@@ -68,6 +68,8 @@ type OtpVerifyResponse = {
   account: StoredAccount;
   error?: string;
 };
+
+type AuthMode = "login" | "register";
 
 type FormState = {
   name: string;
@@ -164,9 +166,16 @@ function getInitialSavingState() {
   );
 }
 
-export function ClipCraftApp() {
+export function ClipCraftApp({
+  initialAuthMode = "login",
+  initialStudioView = "studio",
+}: {
+  initialAuthMode?: AuthMode;
+  initialStudioView?: ClipCraftStudioView;
+}) {
   const [locale, setLocale] = useState<Locale>(getInitialLocale);
   const copy = getMessages(locale);
+  const [authMode, setAuthMode] = useState<AuthMode>(initialAuthMode);
   const [account, setAccount] = useState<StoredAccount | null>(null);
   const [plans, setPlans] = useState<ClipCraftPlan[]>(fallbackPlans);
   const [stripeConfigured, setStripeConfigured] = useState(false);
@@ -183,6 +192,8 @@ export function ClipCraftApp() {
   const [error, setError] = useState("");
   const [loginEmail, setLoginEmail] = useState("");
   const [loginCode, setLoginCode] = useState("");
+  const [registerName, setRegisterName] = useState("");
+  const [registerWorkspace, setRegisterWorkspace] = useState("");
   const [devOtp, setDevOtp] = useState("");
   const [otpSentTo, setOtpSentTo] = useState("");
 
@@ -320,6 +331,11 @@ export function ClipCraftApp() {
     setMessage("");
     setDevOtp("");
 
+    if (authMode === "register" && !registerName.trim()) {
+      setError(copy.app.missingRegistrationName);
+      return;
+    }
+
     if (!/^\S+@\S+\.\S+$/.test(loginEmail.trim())) {
       setError(copy.app.invalidEmail);
       return;
@@ -342,8 +358,12 @@ export function ClipCraftApp() {
       setDevOtp(payload.devOtp ?? "");
       setMessage(
         payload.delivery === "email"
-          ? copy.app.otpSentEmail
-          : copy.app.otpSentDev,
+          ? authMode === "register"
+            ? copy.app.registrationCodeSentEmail
+            : copy.app.otpSentEmail
+          : authMode === "register"
+            ? copy.app.registrationCodeSentDev
+            : copy.app.otpSentDev,
       );
     } catch (otpError) {
       setError(
@@ -370,7 +390,13 @@ export function ClipCraftApp() {
       const response = await fetch("/api/auth/otp/verify", {
         method: "POST",
         headers: jsonHeaders(locale),
-        body: JSON.stringify({ email: otpSentTo, code: loginCode }),
+        body: JSON.stringify({
+          email: otpSentTo,
+          code: loginCode,
+          name: authMode === "register" ? registerName : undefined,
+          workspaceName:
+            authMode === "register" ? registerWorkspace : undefined,
+        }),
       });
       const payload = (await response.json()) as OtpVerifyResponse;
       if (!response.ok) {
@@ -380,7 +406,11 @@ export function ClipCraftApp() {
       applyAccount(payload.account);
       setLoginCode("");
       setDevOtp("");
-      setMessage(copy.app.signedIn);
+      setMessage(
+        authMode === "register"
+          ? copy.app.registrationComplete
+          : copy.app.signedIn,
+      );
     } catch (verifyError) {
       setError(
         verifyError instanceof Error
@@ -401,8 +431,11 @@ export function ClipCraftApp() {
       setShowBilling(false);
       setStep("profile");
       setForm(defaultForm);
+      setAuthMode(initialAuthMode);
       setLoginEmail("");
       setLoginCode("");
+      setRegisterName("");
+      setRegisterWorkspace("");
       setDevOtp("");
       setOtpSentTo("");
       setMessage("");
@@ -577,11 +610,24 @@ export function ClipCraftApp() {
         email={loginEmail}
         error={error}
         message={message}
+        mode={authMode}
         onChangeCode={setLoginCode}
         onChangeEmail={setLoginEmail}
+        onChangeMode={(mode) => {
+          setAuthMode(mode);
+          setLoginCode("");
+          setDevOtp("");
+          setOtpSentTo("");
+          setMessage("");
+          setError("");
+        }}
+        onChangeRegisterName={setRegisterName}
+        onChangeRegisterWorkspace={setRegisterWorkspace}
         onRequestCode={requestLoginCode}
         onVerifyCode={verifyLoginCode}
         otpSentTo={otpSentTo}
+        registerName={registerName}
+        registerWorkspace={registerWorkspace}
         saving={saving}
         code={loginCode}
         copy={copy}
@@ -617,37 +663,25 @@ export function ClipCraftApp() {
         />
       ) : (
         <>
-          {account ? (
-            <MobileAccountBar
-              account={account}
-              copy={copy}
-              locale={locale}
-              onLogout={() => void logout()}
-              onLocaleChange={setLocale}
-              onManageBilling={openBillingPortal}
-              onOpenBilling={() => {
-                setShowBilling(true);
-                setStep("payment");
-              }}
-              saving={saving}
-            />
-          ) : null}
-          <ClipCraftStudio locale={locale} onLocaleChange={setLocale} />
-          {account ? (
-            <AccountDock
-              account={account}
-              copy={copy}
-              locale={locale}
-              onLogout={() => void logout()}
-              onLocaleChange={setLocale}
-              onManageBilling={openBillingPortal}
-              onOpenBilling={() => {
-                setShowBilling(true);
-                setStep("payment");
-              }}
-              saving={saving}
-            />
-          ) : null}
+          <ClipCraftStudio
+            account={account}
+            initialView={initialStudioView}
+            locale={locale}
+            onEditAccount={() => {
+              setShowBilling(true);
+              setStep("profile");
+            }}
+            onLocaleChange={setLocale}
+            onLogout={() => void logout()}
+            onManageBilling={openBillingPortal}
+            onOpenBilling={() => {
+              setShowBilling(true);
+              setStep("payment");
+            }}
+            plans={plans}
+            saving={saving}
+            stripeConfigured={stripeConfigured}
+          />
         </>
       )}
     </>
@@ -872,12 +906,18 @@ function LoginShell({
   error,
   locale,
   message,
+  mode,
   onChangeCode,
   onChangeEmail,
+  onChangeMode,
+  onChangeRegisterName,
+  onChangeRegisterWorkspace,
   onLocaleChange,
   onRequestCode,
   onVerifyCode,
   otpSentTo,
+  registerName,
+  registerWorkspace,
   saving,
 }: {
   code: string;
@@ -887,14 +927,22 @@ function LoginShell({
   error: string;
   locale: Locale;
   message: string;
+  mode: AuthMode;
   onChangeCode: (value: string) => void;
   onChangeEmail: (value: string) => void;
+  onChangeMode: (mode: AuthMode) => void;
+  onChangeRegisterName: (value: string) => void;
+  onChangeRegisterWorkspace: (value: string) => void;
   onLocaleChange: (locale: Locale) => void;
   onRequestCode: () => void;
   onVerifyCode: () => void;
   otpSentTo: string;
+  registerName: string;
+  registerWorkspace: string;
   saving: boolean;
 }) {
+  const isRegister = mode === "register";
+
   return (
     <main className="min-h-screen bg-[#f7f7f2] px-4 py-4 text-[#15120d]">
       <div className="mx-auto grid min-h-[calc(100vh-32px)] w-full max-w-[1180px] gap-5 lg:grid-cols-[360px_minmax(0,1fr)]">
@@ -939,10 +987,10 @@ function LoginShell({
           <header className="flex flex-col gap-3 border-b border-black/10 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="font-mono text-xs uppercase tracking-[0.18em] text-black/45">
-                {copy.login.eyebrow}
+                {isRegister ? copy.login.registerEyebrow : copy.login.eyebrow}
               </p>
               <h1 className="mt-1 text-2xl font-semibold tracking-normal">
-                {copy.login.title}
+                {isRegister ? copy.login.registerTitle : copy.login.title}
               </h1>
             </div>
             <LanguageToggle
@@ -955,6 +1003,30 @@ function LoginShell({
 
           <div className="grid gap-5 p-5 xl:grid-cols-[minmax(0,1fr)_360px]">
             <div className="grid content-start gap-4">
+              <div
+                aria-label={copy.login.authMode}
+                className="grid grid-cols-2 rounded-md border border-black/10 bg-[#f7f7f2] p-1"
+                role="group"
+              >
+                {(["login", "register"] as const).map((item) => (
+                  <button
+                    className={[
+                      "h-10 rounded text-sm font-bold transition",
+                      mode === item
+                        ? "bg-black text-white"
+                        : "text-black/55 hover:text-black",
+                    ].join(" ")}
+                    key={item}
+                    onClick={() => onChangeMode(item)}
+                    type="button"
+                  >
+                    {item === "login"
+                      ? copy.login.signInTab
+                      : copy.login.registerTab}
+                  </button>
+                ))}
+              </div>
+
               {error ? (
                 <div className="rounded-md border border-[#ff4d2e]/35 bg-[#ff4d2e]/10 px-4 py-3 text-sm text-[#8f2211]">
                   {error}
@@ -964,6 +1036,25 @@ function LoginShell({
                 <div className="rounded-md border border-[#1f8a5b]/25 bg-[#1f8a5b]/10 px-4 py-3 text-sm text-[#176346]">
                   {message}
                 </div>
+              ) : null}
+
+              {isRegister ? (
+                <>
+                  <Field
+                    icon={<UserRound className="size-4" />}
+                    label={copy.login.name}
+                    onChange={onChangeRegisterName}
+                    placeholder="Mira Schaefer"
+                    value={registerName}
+                  />
+                  <Field
+                    icon={<Building2 className="size-4" />}
+                    label={copy.login.workspace}
+                    onChange={onChangeRegisterWorkspace}
+                    placeholder="Mira Studio"
+                    value={registerWorkspace}
+                  />
+                </>
               ) : null}
 
               <Field
@@ -982,7 +1073,7 @@ function LoginShell({
                 type="button"
               >
                 {saving ? <Loader2 className="size-4 animate-spin" /> : <KeyRound className="size-4" />}
-                {copy.login.sendCode}
+                {isRegister ? copy.login.sendRegistrationCode : copy.login.sendCode}
               </button>
 
               {otpSentTo ? (
@@ -1017,7 +1108,7 @@ function LoginShell({
                     type="button"
                   >
                     {saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
-                    {copy.login.submit}
+                    {isRegister ? copy.login.registerSubmit : copy.login.submit}
                   </button>
                 </>
               ) : null}
@@ -1025,9 +1116,15 @@ function LoginShell({
 
             <div className="rounded-lg border border-black/10 bg-[#f7f7f2] p-5">
               <LockKeyhole className="mb-4 size-6 text-[#ff4d2e]" />
-              <h2 className="text-xl font-semibold">{copy.login.cleanFlowTitle}</h2>
+              <h2 className="text-xl font-semibold">
+                {isRegister
+                  ? copy.login.registerFlowTitle
+                  : copy.login.cleanFlowTitle}
+              </h2>
               <p className="mt-3 text-sm leading-6 text-black/60">
-                {copy.login.cleanFlowBody}
+                {isRegister
+                  ? copy.login.registerFlowBody
+                  : copy.login.cleanFlowBody}
               </p>
             </div>
           </div>
@@ -1447,158 +1544,6 @@ function LanguageToggle({
           {copy.locale[item]}
         </button>
       ))}
-    </div>
-  );
-}
-
-function AccountDock({
-  account,
-  copy,
-  locale,
-  onLogout,
-  onLocaleChange,
-  onManageBilling,
-  onOpenBilling,
-  saving,
-}: {
-  account: StoredAccount;
-  copy: Messages;
-  locale: Locale;
-  onLogout: () => void;
-  onLocaleChange: (locale: Locale) => void;
-  onManageBilling: () => void;
-  onOpenBilling: () => void;
-  saving: boolean;
-}) {
-  const planName = account.billing.planId === "studio" ? "Studio" : "Creator";
-
-  return (
-    <div className="fixed bottom-4 right-4 z-50 hidden w-[min(360px,calc(100vw-32px))] rounded-lg border border-white/10 bg-[#15120d]/95 p-3 text-white shadow-2xl shadow-black/30 backdrop-blur md:block">
-      <div className="flex items-center gap-3">
-        <div
-          className="grid size-10 place-items-center rounded-md text-black"
-          style={{ backgroundColor: account.brandAccent || "#b7ff4a" }}
-        >
-          <BadgeCheck className="size-5" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold">{account.workspaceName}</p>
-          <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-white/45">
-            {planName} · {Math.round(account.usage.monthlyMinutesUsed)} min genutzt
-          </p>
-        </div>
-      </div>
-      <div className="mt-3">
-        <LanguageToggle
-          copy={copy}
-          locale={locale}
-          onLocaleChange={onLocaleChange}
-          tone="dark"
-        />
-      </div>
-      <div className="mt-3 grid grid-cols-3 gap-2">
-        <button
-          className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-white/10 px-3 text-sm font-semibold text-white/75 transition hover:border-white/30 hover:text-white"
-          disabled={saving}
-          onClick={onOpenBilling}
-          type="button"
-        >
-          <CreditCard className="size-4" />
-          {copy.onboarding.plan}
-        </button>
-        <button
-          className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-white px-3 text-sm font-semibold text-black transition hover:bg-white/90 disabled:opacity-50"
-          disabled={saving}
-          onClick={onManageBilling}
-          type="button"
-        >
-          {saving ? <Loader2 className="size-4 animate-spin" /> : <Receipt className="size-4" />}
-          {copy.onboarding.billing}
-        </button>
-        <button
-          className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-white/10 px-3 text-sm font-semibold text-white/75 transition hover:border-white/30 hover:text-white"
-          disabled={saving}
-          onClick={onLogout}
-          type="button"
-        >
-          <LogOut className="size-4" />
-          {copy.app.logout}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function MobileAccountBar({
-  account,
-  copy,
-  locale,
-  onLogout,
-  onLocaleChange,
-  onManageBilling,
-  onOpenBilling,
-  saving,
-}: {
-  account: StoredAccount;
-  copy: Messages;
-  locale: Locale;
-  onLogout: () => void;
-  onLocaleChange: (locale: Locale) => void;
-  onManageBilling: () => void;
-  onOpenBilling: () => void;
-  saving: boolean;
-}) {
-  const planName = account.billing.planId === "studio" ? "Studio" : "Creator";
-
-  return (
-    <div className="border-b border-white/10 bg-[#15120d] px-4 py-3 text-white md:hidden">
-      <div className="mx-auto flex max-w-[1720px] items-center gap-3">
-        <div
-          className="grid size-10 place-items-center rounded-md text-black"
-          style={{ backgroundColor: account.brandAccent || "#b7ff4a" }}
-        >
-          <BadgeCheck className="size-5" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold">{account.workspaceName}</p>
-          <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-white/45">
-            {planName} · {Math.round(account.usage.monthlyMinutesUsed)} min
-          </p>
-        </div>
-        <button
-          className="grid size-10 place-items-center rounded-md border border-white/10 text-white/75"
-          disabled={saving}
-          onClick={onOpenBilling}
-          type="button"
-          aria-label="Plan"
-        >
-          <CreditCard className="size-4" />
-        </button>
-        <button
-          className="grid size-10 place-items-center rounded-md bg-white text-black disabled:opacity-50"
-          disabled={saving}
-          onClick={onManageBilling}
-          type="button"
-          aria-label="Billing"
-        >
-          {saving ? <Loader2 className="size-4 animate-spin" /> : <Receipt className="size-4" />}
-        </button>
-        <button
-          className="grid size-10 place-items-center rounded-md border border-white/10 text-white/75"
-          disabled={saving}
-          onClick={onLogout}
-          type="button"
-          aria-label="Logout"
-        >
-          <LogOut className="size-4" />
-        </button>
-        <LanguageToggle
-          copy={copy}
-          locale={locale}
-          onLocaleChange={onLocaleChange}
-          tone="dark"
-        />
-      </div>
     </div>
   );
 }

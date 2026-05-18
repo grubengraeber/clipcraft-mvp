@@ -7,11 +7,13 @@ Composer, PNG-Export und lokales Projektarchiv.
 ## Funktionen
 
 - Onboarding fuer neue Nutzer mit Workspace, Rolle, Workflow und Brand Accent
+- Getrennte Seiten fuer Login (`/login`) und Registrierung (`/register`)
 - Passwortlose Anmeldung per E-Mail-OTP und HTTP-only Session-Cookie
 - Vollstaendige Deutsch/Englisch-Umschaltung fuer UX, OTP-E-Mail und API-Fehler
 - Billing-Gate vor Analyse und Speichern
 - Stripe Checkout fuer echte Subscriptions, sobald Stripe-ENV gesetzt ist
 - Lokaler Testmodus ohne Stripe-Keys, damit die App sofort nutzbar bleibt
+- Eigene Produktflaechen fuer Studio (`/studio`), Projektarchiv (`/projects`) und Settings (`/settings`)
 - OpenAI-Transkription mit `gpt-4o-mini-transcribe`
 - Multimodale Creative-Analyse mit `gpt-5`
 - Clientseitiger Frame-Scan nach Schaerfe, Kontrast, Helligkeit und Saettigung
@@ -72,13 +74,14 @@ Ohne Stripe-Keys aktiviert der Button im Payment-Step ein lokales Test-Abo.
 Das ist fuer lokale Nutzung und UX-Tests gedacht und verarbeitet keine echte
 Kartenzahlung.
 
-## OTP Login
+## Login und Registrierung
 
-Neue Nutzer starten mit E-Mail und einem sechsstelligen Login-Code. In lokaler
-Entwicklung ohne `RESEND_API_KEY` gibt `/api/auth/otp/request` den Code nur fuer
-den Testmodus zurueck, und die UI zeigt ihn direkt an. Sobald `RESEND_API_KEY`
-gesetzt ist, sendet ClipCraft den Code per Resend und gibt keinen Code mehr an
-den Browser zurueck.
+Neue Nutzer starten auf `/register` mit Name, Workspace, E-Mail und einem
+sechsstelligen Code. Bestehende Nutzer melden sich auf `/login` mit E-Mail und
+Code an. In lokaler Entwicklung ohne `RESEND_API_KEY` gibt
+`/api/auth/otp/request` den Code nur fuer den Testmodus zurueck, und die UI
+zeigt ihn direkt an. Sobald `RESEND_API_KEY` gesetzt ist, sendet ClipCraft den
+Code per Resend und gibt keinen Code mehr an den Browser zurueck.
 
 Nach erfolgreicher Verifikation setzt `/api/auth/otp/verify` ein HTTP-only
 Cookie (`clipcraft_session`). Onboarding, Checkout, Analyse und Projektarchiv
@@ -118,11 +121,11 @@ npm run screenshot:audit
 Statements, Branches, Functions und Lines auf den kritischen Store-/Auth-Libs.
 
 `npm run screenshot:audit` startet nach einem vorhandenen Build automatisch
-`next start` auf Port `3210`, klickt mit Playwright durch Onboarding,
-lokale Testzahlung, Studio und Projektarchiv und schreibt PNGs nach
-`frontend/artifacts/screenshots/`. Ohne vorhandenen Build faellt der Audit auf
-`next dev` zurueck. Mit `SCREENSHOT_BASE_URL=http://localhost:3001` kann eine
-bereits laufende App geprueft werden.
+`next start` auf Port `3210`, klickt mit Playwright durch Login, Registrierung,
+Onboarding, lokale Testzahlung, Studio, Projektarchiv und Settings und schreibt
+PNGs nach `frontend/artifacts/screenshots/`. Ohne vorhandenen Build faellt der
+Audit auf `next dev` zurueck. Mit `SCREENSHOT_BASE_URL=http://localhost:3001`
+kann eine bereits laufende App geprueft werden.
 
 ## Docker
 
@@ -136,6 +139,7 @@ Die App laeuft dann auf `http://localhost:3000`.
 ## Projektstruktur
 
 - `frontend/` vollstaendige ClipCraft Studio App
+- `frontend/src/app/login`, `register`, `studio`, `projects`, `settings` eigenstaendige Produktseiten
 - `frontend/src/app/api/account` Account und Onboarding
 - `frontend/src/app/api/billing` Checkout, Confirm, Portal und Webhook
 - `frontend/src/app/api/analyze` OpenAI/FFmpeg Analyse

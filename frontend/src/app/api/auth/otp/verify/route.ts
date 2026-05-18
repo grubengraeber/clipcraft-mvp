@@ -20,6 +20,7 @@ export async function POST(request: Request) {
       email?: string;
       code?: string;
       name?: string;
+      workspaceName?: string;
     };
     const verification = await verifyOtp(body.email ?? "", body.code ?? "");
 
@@ -33,6 +34,7 @@ export async function POST(request: Request) {
     const account = await ensureAccountForEmail({
       email: verification.email,
       name: body.name,
+      workspaceName: body.workspaceName,
     });
     const { token, session } = await createSession({
       accountId: account.id,
