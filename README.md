@@ -1,131 +1,147 @@
-# ClipCraft MVP (Auto-Thumbnail-App)
+# ClipCraft Studio
 
-MVP für lokale Auto-Thumbnail-Generierung aus kurzen Videos (max. 30s).
+ClipCraft ist eine Next.js-App fuer kurze Social-Videos: schneller First-Run,
+Plan-Auswahl, Checkout, AI-Transkript, Creative Brief, Frame-Scan, Thumbnail-
+Composer, PNG-Export und lokales Projektarchiv.
 
-## Features
+## Funktionen
 
-- Video-Upload (max. 30 Sekunden)
-- Lokale Transkription mit Whisper (`openai-whisper`)
-- Regelbasierte Titel-Generierung aus Transkript
-- Frame-Extraktion mit `ffmpeg`
-- Thumbnail-Rendering mit Pillow (YouTube, Instagram, TikTok)
-- Frontend in Deutsch/Englisch
-- API-Key-Schutz zwischen Frontend und Backend (nur Server-seitiger Proxy setzt den Key)
-- Einfaches Job-Status-Polling im Frontend
+- Onboarding fuer neue Nutzer mit Workspace, Rolle, Workflow und Brand Accent
+- Getrennte Seiten fuer Login (`/login`) und Registrierung (`/register`)
+- Passwortlose Anmeldung per E-Mail-OTP und HTTP-only Session-Cookie
+- Vollstaendige Deutsch/Englisch-Umschaltung fuer UX, OTP-E-Mail und API-Fehler
+- Billing-Gate vor Analyse und Speichern
+- Stripe Checkout fuer echte Subscriptions, sobald Stripe-ENV gesetzt ist
+- Lokaler Testmodus ohne Stripe-Keys, damit die App sofort nutzbar bleibt
+- Eigene Produktflaechen fuer Studio (`/studio`), Projektarchiv (`/projects`) und Settings (`/settings`)
+- OpenAI-Transkription mit `gpt-4o-mini-transcribe`
+- Multimodale Creative-Analyse mit `gpt-5`
+- Clientseitiger Frame-Scan nach Schaerfe, Kontrast, Helligkeit und Saettigung
+- Canvas-Composer fuer YouTube, Shorts, Instagram und Wide Preview
+- CRUD-Bibliothek fuer Videos, Thumbnails, Headlines, Presets und Analyse-Daten
+- Lokale Usage-Erfassung fuer Minuten und PNG-Exports
 
-## Projektstruktur
-
-- `backend/` FastAPI API + Pipeline
-- `frontend/` Next.js UI + API Proxy-Routes
-- `docker-compose.yml` lokales Multi-Service-Setup
-
-## Local Start (ohne Docker)
-
-### Voraussetzungen
-
-- Python 3.11+
-- Node.js 20+
-- `ffmpeg` + `ffprobe` im PATH
-
-### 1) Backend starten
-
-```bash
-cd backend
-cp .env.example .env
-# BACKEND_API_KEY anpassen!
-pip install -r requirements.txt
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-### 2) Frontend starten
+## Setup
 
 ```bash
 cd frontend
-cp .env.example .env
-# BACKEND_API_KEY muss mit backend/.env identisch sein
 npm install
+cp .env.example .env.local
 npm run dev
 ```
 
-Dann öffnen: `http://localhost:3000`
+Dann `http://localhost:3000` oeffnen.
 
-## Docker Start
+Fuer AI-Analyse muss `OPENAI_API_KEY` in `frontend/.env.local` gesetzt sein.
+Ohne `RESEND_API_KEY` zeigt die App den OTP-Code lokal im Login-Screen an.
+Ohne Stripe-Konfiguration startet die App im lokalen Testzahlungsmodus.
+Die Sprache kann in Login, Onboarding und Studio zwischen Deutsch und Englisch
+umgeschaltet werden; API-Calls senden das aktive Locale mit.
+
+## Env
 
 ```bash
-cp backend/.env.example backend/.env
-cp frontend/.env.example frontend/.env
-# in beiden Dateien denselben BACKEND_API_KEY setzen
+OPENAI_API_KEY=sk-proj-...
 
+# Optional:
+OPENAI_TRANSCRIBE_MODEL=gpt-4o-mini-transcribe
+OPENAI_TEXT_MODEL=gpt-5
+FFMPEG_PATH=/usr/local/bin/ffmpeg
+CLIPCRAFT_DATA_DIR=/Users/name/ClipCraft-Storage
+
+# Optional passwordless OTP email delivery:
+RESEND_API_KEY=re_...
+OTP_EMAIL_FROM=ClipCraft <login@your-domain.com>
+
+# Optional Stripe Checkout:
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+APP_URL=http://localhost:3000
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+STRIPE_PRICE_CREATOR=price_...
+STRIPE_PRICE_STUDIO=price_...
+```
+
+## Stripe
+
+Wenn `STRIPE_SECRET_KEY` plus mindestens `STRIPE_PRICE_CREATOR` gesetzt ist,
+erstellt `/api/billing/checkout` eine gehostete Stripe Checkout Session im
+Subscription-Modus. Nach erfolgreichem Checkout bestaetigt
+`/api/billing/confirm` die Session; `/api/billing/webhook` verarbeitet
+`checkout.session.completed` und Subscription-Updates mit Signaturpruefung.
+
+Ohne Stripe-Keys aktiviert der Button im Payment-Step ein lokales Test-Abo.
+Das ist fuer lokale Nutzung und UX-Tests gedacht und verarbeitet keine echte
+Kartenzahlung.
+
+## Login und Registrierung
+
+Neue Nutzer starten auf `/register` mit Name, Workspace, E-Mail und einem
+sechsstelligen Code. Bestehende Nutzer melden sich auf `/login` mit E-Mail und
+Code an. In lokaler Entwicklung ohne `RESEND_API_KEY` gibt
+`/api/auth/otp/request` den Code nur fuer den Testmodus zurueck, und die UI
+zeigt ihn direkt an. Sobald `RESEND_API_KEY` gesetzt ist, sendet ClipCraft den
+Code per Resend und gibt keinen Code mehr an den Browser zurueck.
+
+Nach erfolgreicher Verifikation setzt `/api/auth/otp/verify` ein HTTP-only
+Cookie (`clipcraft_session`). Onboarding, Checkout, Analyse und Projektarchiv
+akzeptieren nur diese Session; die verifizierte E-Mail bleibt waehrend des
+Onboardings die Account-Identitaet.
+
+## Internationalisierung
+
+Die App nutzt `frontend/src/lib/i18n.ts` als gemeinsame Message-Quelle fuer
+Client und API. Der Sprachumschalter speichert `clipcraft_locale` im Browser und
+sendet `x-clipcraft-locale` an API-Routen, damit Fehlermeldungen, OTP-E-Mails,
+lokaler Analyse-Fallback und Payment-/Projektmeldungen in derselben Sprache
+antworten.
+
+## Lokaler Speicher
+
+Gespeicherte Daten liegen standardmaessig in `frontend/.clipcraft-data/`:
+
+- `account.json` enthaelt Onboarding-, Billing- und Usage-Status
+- `projects.json` enthaelt Projektmetadaten
+- `videos/` enthaelt Originalvideos
+- `thumbnails/` enthaelt PNG-Exports
+
+Der Speicherort kann mit `CLIPCRAFT_DATA_DIR` ueberschrieben werden.
+
+## Verifikation
+
+```bash
+cd frontend
+npm run lint
+npm run build
+npm run test:coverage
+npm run screenshot:audit
+```
+
+`npm run test:coverage` nutzt Vitest/V8 und erzwingt mindestens 80% fuer
+Statements, Branches, Functions und Lines auf den kritischen Store-/Auth-Libs.
+
+`npm run screenshot:audit` startet nach einem vorhandenen Build automatisch
+`next start` auf Port `3210`, klickt mit Playwright durch Login, Registrierung,
+Onboarding, lokale Testzahlung, Studio, Projektarchiv und Settings und schreibt
+PNGs nach `frontend/artifacts/screenshots/`. Ohne vorhandenen Build faellt der
+Audit auf `next dev` zurueck. Mit `SCREENSHOT_BASE_URL=http://localhost:3001`
+kann eine bereits laufende App geprueft werden.
+
+## Docker
+
+```bash
+cp frontend/.env.example frontend/.env
 docker compose up --build
 ```
 
-- Frontend: `http://localhost:3000`
-- Backend: `http://localhost:8000`
+Die App laeuft dann auf `http://localhost:3000`.
 
-## API kurz
+## Projektstruktur
 
-- `POST /jobs` (multipart `video`) → `{ job_id }`
-- `GET /jobs/{job_id}` → Status + Ergebnis
-- `GET /files/...` → statische Thumbnail-Dateien
-
-Backend erwartet Header: `x-api-key: <BACKEND_API_KEY>`
-
-## Coolify Deployment (2 Services)
-
-Empfohlen als **zwei Apps** (frontend + backend) im selben Projekt.
-
-### Backend (FastAPI)
-
-- Build Context: `projects/auto-thumbnail-mvp/backend`
-- Dockerfile: `Dockerfile`
-- Port: `8000`
-- Persistenter Storage Mount: `/app/storage`
-- ENV:
-  - `BACKEND_API_KEY=<starkes-geheimes-token>`
-  - `WHISPER_MODEL=base`
-  - `MAX_VIDEO_SECONDS=30`
-  - `STORAGE_DIR=storage/jobs`
-
-### Frontend (Next.js)
-
-- Build Context: `projects/auto-thumbnail-mvp/frontend`
-- Dockerfile: `Dockerfile`
-- Port: `3000`
-- ENV:
-  - `BACKEND_URL=http://<internal-backend-service-name>:8000`
-  - `BACKEND_API_KEY=<gleiches-token-wie-backend>`
-  - `NEXT_PUBLIC_BACKEND_URL=https://<deine-backend-domain>`
-
-### Netzwerk / Domain
-
-- Backend öffentlich oder intern erreichbar (für Bild-URLs nutzt Frontend aktuell `NEXT_PUBLIC_BACKEND_URL`)
-- Frontend öffentliche Domain
-
-## App-Name + Subdomain Vorschlag
-
-- **App-Name:** ClipCraft
-- **Subdomain:** `clipcraft.tietz-playground.com`
-
-Alternativen:
-- ThumbForge → `thumbforge.tietz-playground.com`
-- SnapTitle → `snaptitle.tietz-playground.com`
-
-## Was fehlt noch für Production Hardening
-
-1. **Auth/Users:** Login + Mandantenfähigkeit (aktuell globaler Key)
-2. **Queue/Workers:** Redis + RQ/Celery statt In-Memory-Threads
-3. **Rate Limiting & Quotas:** Schutz gegen Abuse/DoS
-4. **Datei-Sicherheit:** MIME-Validierung, Antivirus-Scan, strictere ffmpeg Sandbox
-5. **Observability:** strukturierte Logs, Metrics, Error-Tracking
-6. **Retries/Timeouts:** robuste Job-Fehlerbehandlung und Dead-letter-Strategie
-7. **Storage:** S3/MinIO + Lifecycle + Signed URLs
-8. **Secrets-Management:** Coolify Secrets/Vault statt `.env` auf Hosts
-9. **CORS/Origin Lockdown:** aktuell MVP-offen
-10. **Tests:** Unit + Integration + E2E + Lasttests
-11. **Bildqualität:** besseres Frame-Ranking (Blur/Faces/Saliency)
-12. **Internationalisierung:** sauber via i18n-Routing statt Inline-Copy
-
-## Hinweise
-
-- Keine Secrets im Repo committen (nur `.env.example` ist enthalten).
-- Whisper-Modell `base` ist ein guter MVP-Kompromiss. Für schnellere lokale Runs ggf. `tiny` nutzen.
+- `frontend/` vollstaendige ClipCraft Studio App
+- `frontend/src/app/login`, `register`, `studio`, `projects`, `settings` eigenstaendige Produktseiten
+- `frontend/src/app/api/account` Account und Onboarding
+- `frontend/src/app/api/billing` Checkout, Confirm, Portal und Webhook
+- `frontend/src/app/api/analyze` OpenAI/FFmpeg Analyse
+- `frontend/src/app/api/projects` Projektarchiv und Medien
+- `backend/` alter FastAPI-MVP, bleibt zur Referenz im Repo, wird von der neuen App nicht benoetigt
